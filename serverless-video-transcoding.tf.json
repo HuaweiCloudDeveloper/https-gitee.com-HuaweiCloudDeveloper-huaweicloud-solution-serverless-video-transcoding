@@ -1,0 +1,153 @@
+{
+    "terraform": {
+        "required_providers": [
+            {
+                "huaweicloud": {
+                    "source": "huawei.com/provider/huaweicloud",
+                    "version": ">=1.42.0"
+                }
+            }
+        ]
+    },
+    "provider": {
+        "huaweicloud": {
+            "cloud": "myhuaweicloud.com",
+            "endpoints": {
+                "iam": "iam.ap-southeast-3.myhuaweicloud.com",
+                "dns": "dns.ap-southeast-3.myhuaweicloud.com"
+            },
+            "insecure": true,
+            "region": "ap-southeast-3",
+            "auth_url": "https://iam.ap-southeast-3.myhuaweicloud.com/v3"
+        }
+    },
+    "variable": {
+        "src_video_bucket_name": {
+            "default": "",
+            "description": "Name of an OBS bucket for storing the original videos. The name must be unique and can contain 3 to 55 characters, including lowercase letters, digits, and hyphens (-). Do not start or end with a hyphen.",
+            "type": "string",
+            "nullable": "false",
+            "validation": {
+                "condition": "${length(regexall(\"^[a-z0-9][a-z0-9-]{1,53}[a-z0-9]$\",var.src_video_bucket_name))>0}",
+                "error_message": "Invalid input. Please re-enter."
+            }
+        },
+        "transcode_bucket_name": {
+            "default": "",
+            "description": "Name of an OBS bucket for storing transcoded videos. The name must be unique and can contain 3 to 56 characters, including lowercase letters, digits, and hyphens (-). Do not start or end with a hyphen.",
+            "type": "string",
+            "nullable": "false",
+            "validation": {
+                "condition": "${length(regexall(\"^[a-z0-9][a-z0-9\\\\.-]{1,54}[a-z0-9]$\",var.transcode_bucket_name))>0}",
+                "error_message": "Invalid input. Please re-enter."
+            }
+        },
+        "dst_format": {
+            "default": "mp4",
+            "description": "Target format to transcode videos to. For example, avi, flv, and m3u8.",
+            "type": "string",
+            "nullable": "false",
+            "validation": {
+                "condition": "${contains([\"mp4\",\"avi\",\"mov\",\"flv\",\"wmv\",\"mkv\",\"mpg\",\"mpeg\",\"m4v\",\"3gp\",\"webm\"], var.dst_format)}",
+                "error_message": "Invalid input. Please re-enter."
+            }
+        },
+        "dst_height": {
+            "default": "",
+            "description": "Target resolution height to transcode videos to. For example, 720.",
+            "type": "string",
+            "nullable": "false",
+            "validation": {
+                "condition": "${length(regexall(\"^[0-9]{3,4}$\",var.dst_height))>0}",
+                "error_message": "Invalid input. Please re-enter."
+            }
+        },
+        "dst_width": {
+            "default": "",
+            "description": "Target resolution width to transcode videos to. For example, 1280.",
+            "type": "string",
+            "nullable": "false",
+            "validation": {
+                "condition": "${length(regexall(\"^[0-9]{3,4}$\",var.dst_width))>0}",
+                "error_message": "Invalid input. Please re-enter."
+            }
+        }
+    },
+    "data": {
+        "huaweicloud_fgs_dependencies": {
+            "fgs_dependencies_obs": {
+                "type": "public",
+                "name": "obs_3_21_8"
+            }
+        }
+    },
+    "resource": {
+        "huaweicloud_fgs_function": {
+            "fgs_function": {
+                "agency": "${huaweicloud_identity_agency.identity_agency.name}",
+                "functiongraph_version": "v2",
+                "app": "default",
+                "code_type": "obs",
+                "code_url": "https://documentation-samples-4.obs.ap-southeast-3.myhuaweicloud.com/solution-as-code-moudle/serverless-video-transcoding/functiongraph/serverless-video-transcode.zip",
+                "depend_list": [
+                    "${data.huaweicloud_fgs_dependencies.fgs_dependencies_obs.packages[0].id}"
+                ],
+                "handler": "serverless-video-transcode.handler",
+                "memory_size": 4096,
+                "name": "${var.transcode_bucket_name}-fgs",
+                "runtime": "Python3.6",
+                "timeout": 900,
+                "user_data": "${jsonencode({\n transcode_bucket_name = \"${var.transcode_bucket_name}\" \n dst_format = \"${var.dst_format}\" \n dst_height = \"${var.dst_height}\" \n dst_width = \"${var.dst_width}\" \n obs_endpoint = \"obs.ap-southeast-3.myhuaweicloud.com\" \n})}"
+            }
+        },
+        "huaweicloud_fgs_trigger": {
+            "fgs_trigger": {
+                "function_urn": "${huaweicloud_fgs_function.fgs_function.urn}",
+                "obs": [
+                    {
+                        "bucket_name": "${huaweicloud_obs_bucket.src_video_bucket.bucket}",
+                        "event_notification_name": "${var.src_video_bucket_name}_trigger",
+                        "events": [
+                            "Post",
+                            "Put",
+                            "Copy",
+                            "CompleteMultipartUpload"
+                        ]
+                    }
+                ],
+                "status": "ACTIVE",
+                "type": "OBS"
+            }
+        },
+        "huaweicloud_identity_agency": {
+            "identity_agency": {
+                "name": "${var.transcode_bucket_name}_agency",
+                "description": "Delegate OBS accesses to FGS",
+                "delegated_service_name": "op_svc_cff",
+                "domain_roles": [
+                    "OBS Administrator"
+                ],
+                "project_role": [
+                    {
+                        "project": "MOS",
+                        "roles": [
+                            "OBS Administrator"
+                        ]
+                    }
+                ]
+            }
+        },
+        "huaweicloud_obs_bucket": {
+            "transcode_bucket": {
+                "acl": "private",
+                "bucket": "${var.transcode_bucket_name}",
+                "multi_az": true
+            },
+            "src_video_bucket": {
+                "acl": "private",
+                "bucket": "${var.src_video_bucket_name}",
+                "multi_az": true
+            }
+        }
+    }
+}
